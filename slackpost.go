@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"log"
 	"net/http"
-	"net/url"
 	"os"
 
 	"github.com/aws/aws-lambda-go/lambda"
@@ -23,12 +22,22 @@ type Request struct {
 }
 
 type SNSMessage struct {
-	AlarmName        string `json:"AlarmName"`
-	AlarmDescription string `json:"AlarmDescription"`
-	NewStateValue    string `json:"NewStateValue"`
-	NewStateReason   string `json:"NewStateReason"`
-	OldStateValue    string `json:"OldStateValue"`
-	Region           string `json:"Region"`
+	AlarmName        string  `json:"AlarmName"`
+	AlarmDescription string  `json:"AlarmDescription"`
+	NewStateValue    string  `json:"NewStateValue"`
+	NewStateReason   string  `json:"NewStateReason"`
+	OldStateValue    string  `json:"OldStateValue"`
+	Region           string  `json:"Region"`
+	Trigger          Trigger `json:"Trigger"`
+}
+
+type Trigger struct {
+	Dimensions []Dimension `json:"Dimensions"`
+}
+
+type Dimension struct {
+	Name  string `json:"name"`
+	Value string `json:"value"`
 }
 
 type SlackMessage struct {
@@ -40,7 +49,7 @@ type Attachment struct {
 	Pretext    string  `json:"pretext"`
 	Title      string  `json:"title"`
 	TitleLink  string  `json:"title_link"`
-	Body       string  `json:"body"`
+	Text       string  `json:"text"`
 	Color      string  `json:"color"`
 	AuthorName string  `json:"author_name"`
 	Fields     []Field `json:"fields"`
@@ -50,6 +59,12 @@ type Field struct {
 	Title string `json:"title"`
 	Value string `json:"value"`
 	Short bool   `json:"short"`
+}
+
+var AttachmentColor = map[string]string{
+	"ALARM":             "danger",
+	"INSUFFICIENT_DATA": "warning",
+	"OK":                "good",
 }
 
 func handler(request Request) error {
@@ -67,26 +82,33 @@ func handler(request Request) error {
 }
 
 func buildSlackMessage(message SNSMessage) SlackMessage {
+	attachment_fields := []Field{
+		Field{
+			Title: "Region",
+			Value: message.Region,
+			Short: true,
+		},
+		Field{
+			Title: "Previous State",
+			Value: message.OldStateValue,
+			Short: true,
+		},
+	}
+
+	for i := 0; i < len(message.Trigger.Dimensions); i++ {
+		dimension := message.Trigger.Dimensions[i]
+		attachment_fields = append(attachment_fields, Field{Title: dimension.Name, Value: dimension.Value, Short: true})
+	}
+
 	return SlackMessage{
 		Attachments: []Attachment{
 			Attachment{
 				Pretext:   fmt.Sprintf("`%s`", message.AlarmDescription),
-				Title:     message.AlarmName,
-				TitleLink: fmt.Sprintf("https://console.aws.amazon.com/cloudwatch/home#s=%s", url.PathEscape(message.AlarmName)),
-				Body:      message.NewStateReason,
-				Color:     "danger",
-				Fields: []Field{
-					Field{
-						Title: "Region",
-						Value: message.Region,
-						Short: true,
-					},
-					Field{
-						Title: "Previous State",
-						Value: message.OldStateValue,
-						Short: true,
-					},
-				},
+				Title:     fmt.Sprintf("%s: %s", message.NewStateValue, message.AlarmName),
+				TitleLink: "https://console.aws.amazon.com/cloudwatch/home",
+				Text:      message.NewStateReason,
+				Color:     AttachmentColor[message.NewStateValue],
+				Fields:    attachment_fields,
 			},
 		},
 	}
