@@ -27,20 +27,29 @@ type SNSMessage struct {
 	AlarmDescription string `json:"AlarmDescription"`
 	NewStateValue    string `json:"NewStateValue"`
 	NewStateReason   string `json:"NewStateReason"`
+	OldStateValue    string `json:"OldStateValue"`
 	Region           string `json:"Region"`
 }
 
 type SlackMessage struct {
 	Text        string       `json:"text"`
-	Title       string       `json:"title"`
-	TitleUrl    string       `json:"title_url"`
 	Attachments []Attachment `json:"attachments"`
 }
 
 type Attachment struct {
-	Text  string `json:"text"`
-	Color string `json:"color"`
+	Pretext    string  `json:"pretext"`
+	Title      string  `json:"title"`
+	TitleLink  string  `json:"title_link"`
+	Body       string  `json:"body"`
+	Color      string  `json:"color"`
+	AuthorName string  `json:"author_name"`
+	Fields     []Field `json:"fields"`
+}
+
+type Field struct {
 	Title string `json:"title"`
+	Value string `json:"value"`
+	Short bool   `json:"short"`
 }
 
 func handler(request Request) error {
@@ -59,21 +68,25 @@ func handler(request Request) error {
 
 func buildSlackMessage(message SNSMessage) SlackMessage {
 	return SlackMessage{
-		Text: fmt.Sprintf("`%s`", message.AlarmDescription),
-		Title: fmt.Sprintf(
-			"<https://console.aws.amazon.com/cloudwatch/home#s=%s|%s>",
-			url.PathEscape(message.AlarmName), message.AlarmName,
-		),
 		Attachments: []Attachment{
 			Attachment{
-				Text:  message.NewStateReason,
-				Color: "danger",
-				Title: "Reason",
-			},
-			Attachment{
-				Text:  message.Region,
-				Color: "default",
-				Title: "Region",
+				Pretext:   fmt.Sprintf("`%s`", message.AlarmDescription),
+				Title:     message.AlarmName,
+				TitleLink: fmt.Sprintf("https://console.aws.amazon.com/cloudwatch/home#s=%s", url.PathEscape(message.AlarmName)),
+				Body:      message.NewStateReason,
+				Color:     "danger",
+				Fields: []Field{
+					Field{
+						Title: "Region",
+						Value: message.Region,
+						Short: true,
+					},
+					Field{
+						Title: "Previous State",
+						Value: message.OldStateValue,
+						Short: true,
+					},
+				},
 			},
 		},
 	}
